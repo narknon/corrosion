@@ -350,6 +350,7 @@ function(_corrosion_copy_byproduct_deferred target_name output_dir_prop_names ca
                     message(STATUS "[CORROSION DEBUG]   After CONFIGURE: ${curr_out_dir}")
                 endif()
             endif()
+            endif()  # This closes the 'if(output_dir MATCHES "\\$<CONFIG>")'
         else()
             # Fallback to the default directory. We do not append the configuration directory here
             # and instead let CMake do this, since otherwise the resolving of dynamic library
