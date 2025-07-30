@@ -121,6 +121,12 @@ endfunction()
 # directory target property value at configure time. This function must be deferred to the end of
 # the configure stage, so we can be sure that the output directory is not modified afterwards.
 function(_corrosion_set_imported_location_deferred target_name base_property output_directory_property filename)
+    message(STATUS "[CORROSION DEBUG] _corrosion_set_imported_location_deferred called:")
+    message(STATUS "[CORROSION DEBUG]   target_name: ${target_name}")
+    message(STATUS "[CORROSION DEBUG]   base_property: ${base_property}")
+    message(STATUS "[CORROSION DEBUG]   output_directory_property: ${output_directory_property}")
+    message(STATUS "[CORROSION DEBUG]   filename: ${filename}")
+    
     # The output directory property is expected to be set on the exposed target (without postfix),
     # but we need to set the imported location on the actual library target with postfix.
     if("${target_name}" MATCHES "^(.+)-(static|shared)$")
@@ -128,6 +134,7 @@ function(_corrosion_set_imported_location_deferred target_name base_property out
     else()
         set(output_dir_prop_target_name "${target_name}")
     endif()
+    message(STATUS "[CORROSION DEBUG]   output_dir_prop_target_name: ${output_dir_prop_target_name}")
 
     # Append .exe suffix for executable by-products if the target is windows or if it's a host
     # build and the host is Windows.
@@ -138,29 +145,43 @@ function(_corrosion_set_imported_location_deferred target_name base_property out
     endif()
 
     get_target_property(output_directory "${output_dir_prop_target_name}" "${output_directory_property}")
-    message(DEBUG "Output directory property (target ${output_dir_prop_target_name}): ${output_directory_property} dir: ${output_directory}")
+    message(STATUS "[CORROSION DEBUG]   Output directory property (target ${output_dir_prop_target_name}): ${output_directory_property} = ${output_directory}")
 
     foreach(config_type ${CMAKE_CONFIGURATION_TYPES})
         string(TOUPPER "${config_type}" config_type_upper)
+        message(STATUS "[CORROSION DEBUG]   Processing config: ${config_type}")
+        
         get_target_property(output_dir_curr_config ${output_dir_prop_target_name}
             "${output_directory_property}_${config_type_upper}"
         )
+        message(STATUS "[CORROSION DEBUG]     Config-specific property ${output_directory_property}_${config_type_upper}: ${output_dir_curr_config}")
+        
         if(output_dir_curr_config)
             set(curr_out_dir "${output_dir_curr_config}")
+            message(STATUS "[CORROSION DEBUG]     Using config-specific dir: ${curr_out_dir}")
         elseif(output_directory)
+            message(STATUS "[CORROSION DEBUG]     Using base output_directory: ${output_directory}")
             string(GENEX_STRIP "${output_directory}" output_dir_no_genex)
+            message(STATUS "[CORROSION DEBUG]     After GENEX_STRIP: ${output_dir_no_genex}")
             # Only add config dir if there is no genex in here. See
             # https://cmake.org/cmake/help/latest/prop_tgt/RUNTIME_OUTPUT_DIRECTORY.html
             if(output_directory STREQUAL output_dir_no_genex)
                 set(curr_out_dir "${output_directory}/${config_type}")
+                message(STATUS "[CORROSION DEBUG]     No genex - appending config: ${curr_out_dir}")
             else()
                 set(curr_out_dir "${output_directory}")
+                message(STATUS "[CORROSION DEBUG]     Has genex - keeping as is: ${curr_out_dir}")
             endif()
         else()
             set(curr_out_dir "${CMAKE_CURRENT_BINARY_DIR}")
+            message(STATUS "[CORROSION DEBUG]     Using CMAKE_CURRENT_BINARY_DIR: ${curr_out_dir}")
         endif()
+        
+        message(STATUS "[CORROSION DEBUG]     Before CONFIG replacement: ${curr_out_dir}")
         string(REPLACE "\$<CONFIG>" "${config_type}" curr_out_dir "${curr_out_dir}")
-        message(DEBUG "Setting ${base_property}_${config_type_upper} for target ${target_name}"
+        message(STATUS "[CORROSION DEBUG]     After CONFIG replacement: ${curr_out_dir}")
+        
+        message(STATUS "[CORROSION DEBUG]     Setting ${base_property}_${config_type_upper} for target ${target_name}"
                 " to `${curr_out_dir}/${filename}`.")
 
         string(GENEX_STRIP "${curr_out_dir}" stripped_out_dir)
@@ -237,8 +258,15 @@ function(_corrosion_copy_byproduct_deferred target_name output_dir_prop_names ca
         message(FATAL_ERROR "Unexpected additional arguments")
     endif()
 
+    message(STATUS "[CORROSION DEBUG] _corrosion_copy_byproduct_deferred called:")
+    message(STATUS "[CORROSION DEBUG]   target_name: ${target_name}")
+    message(STATUS "[CORROSION DEBUG]   output_dir_prop_names: ${output_dir_prop_names}")
+    message(STATUS "[CORROSION DEBUG]   cargo_build_dir: ${cargo_build_dir}")
+    message(STATUS "[CORROSION DEBUG]   file_names: ${file_names}")
+
     foreach(output_dir_prop_name ${output_dir_prop_names})
         get_target_property(output_dir ${target_name} "${output_dir_prop_name}")
+        message(STATUS "[CORROSION DEBUG]   Checking property ${output_dir_prop_name}: ${output_dir}")
         if(output_dir)
             break()
         endif()
@@ -249,8 +277,11 @@ function(_corrosion_copy_byproduct_deferred target_name output_dir_prop_names ca
 
     foreach(config_type ${CMAKE_CONFIGURATION_TYPES})
         string(TOUPPER "${config_type}" config_type_upper)
+        message(STATUS "[CORROSION DEBUG] Processing config_type: ${config_type}")
+        
         foreach(output_dir_prop_name ${output_dir_prop_names})
             get_target_property(output_dir_curr_config ${target_name} "${output_dir_prop_name}_${config_type_upper}")
+            message(STATUS "[CORROSION DEBUG]   Checking config-specific property ${output_dir_prop_name}_${config_type_upper}: ${output_dir_curr_config}")
             if(output_dir_curr_config)
                 break()
             endif()
@@ -258,34 +289,50 @@ function(_corrosion_copy_byproduct_deferred target_name output_dir_prop_names ca
 
         if(output_dir_curr_config)
             set(curr_out_dir "${output_dir_curr_config}")
+            message(STATUS "[CORROSION DEBUG]   Using config-specific dir: ${curr_out_dir}")
         elseif(output_dir)
+            message(STATUS "[CORROSION DEBUG]   Using base output_dir: ${output_dir}")
             # Fallback to `output_dir` if specified
             # Note: Multi-configuration generators append a per-configuration subdirectory to the
             # specified directory unless a generator expression is used (from CMake documentation).
             string(GENEX_STRIP "${output_dir}" output_dir_no_genex)
+            message(STATUS "[CORROSION DEBUG]   After GENEX_STRIP: ${output_dir_no_genex}")
+            message(STATUS "[CORROSION DEBUG]   Has genex: ${output_dir} != ${output_dir_no_genex}")
+            
             if(output_dir STREQUAL output_dir_no_genex)
                 set(curr_out_dir "${output_dir}/${config_type}")
+                message(STATUS "[CORROSION DEBUG]   No genex - appending config: ${curr_out_dir}")
             else()
                 # If there's a generator expression, expand it
                 string(REPLACE "$<CONFIG>" "${config_type}" curr_out_dir "${output_dir}")
+                message(STATUS "[CORROSION DEBUG]   After CONFIG replacement: ${curr_out_dir}")
+                # Evaluate any remaining CMake variables in the path
+                string(CONFIGURE "${curr_out_dir}" curr_out_dir @ONLY)
+                message(STATUS "[CORROSION DEBUG]   After CONFIGURE: ${curr_out_dir}")
             endif()
         else()
             # Fallback to the default directory. We do not append the configuration directory here
             # and instead let CMake do this, since otherwise the resolving of dynamic library
             # imported paths may fail.
             set(curr_out_dir "${CMAKE_CURRENT_BINARY_DIR}")
+            message(STATUS "[CORROSION DEBUG]   Using default CMAKE_CURRENT_BINARY_DIR: ${curr_out_dir}")
         endif()
+        message(STATUS "[CORROSION DEBUG]   Final curr_out_dir for ${config_type}: ${curr_out_dir}")
         set(multiconfig_out_dir_genex "${multiconfig_out_dir_genex}$<$<CONFIG:${config_type}>:${curr_out_dir}>")
     endforeach()
 
     if(COR_IS_MULTI_CONFIG)
         set(output_dir "${multiconfig_out_dir_genex}")
+        message(STATUS "[CORROSION DEBUG] Multi-config - using genex: ${output_dir}")
     else()
         if(NOT output_dir)
             # Fallback to default directory.
             set(output_dir "${CMAKE_CURRENT_BINARY_DIR}")
         endif()
+        message(STATUS "[CORROSION DEBUG] Single config - using output_dir: ${output_dir}")
     endif()
+    
+    message(STATUS "[CORROSION DEBUG] Final output_dir for copy: ${output_dir}")
 
     # Append .exe suffix for executable by-products if the target is windows or if it's a host
     # build and the host is Windows.
@@ -2231,15 +2278,18 @@ function(corrosion_parse_package_version package_manifest_path out_package_versi
 endfunction()
 
 function(_corrosion_initialize_properties target_name)
+    message(STATUS "[CORROSION DEBUG] _corrosion_initialize_properties called for: ${target_name}")
     # Initialize the `<XYZ>_OUTPUT_DIRECTORY` properties based on `CMAKE_<XYZ>_OUTPUT_DIRECTORY`.
     foreach(output_var RUNTIME_OUTPUT_DIRECTORY ARCHIVE_OUTPUT_DIRECTORY LIBRARY_OUTPUT_DIRECTORY PDB_OUTPUT_DIRECTORY)
         if (DEFINED "CMAKE_${output_var}")
+            message(STATUS "[CORROSION DEBUG]   Setting ${output_var} = ${CMAKE_${output_var}}")
             set_property(TARGET ${target_name} PROPERTY "${output_var}" "${CMAKE_${output_var}}")
         endif()
 
         foreach(config_type ${CMAKE_CONFIGURATION_TYPES})
             string(TOUPPER "${config_type}" config_type_upper)
             if (DEFINED "CMAKE_${output_var}_${config_type_upper}")
+                message(STATUS "[CORROSION DEBUG]   Setting ${output_var}_${config_type_upper} = ${CMAKE_${output_var}_${config_type_upper}}")
                 set_property(TARGET ${target_name} PROPERTY "${output_var}_${config_type_upper}" "${CMAKE_${output_var}_${config_type_upper}}")
             endif()
         endforeach()
