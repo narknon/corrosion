@@ -355,8 +355,24 @@ function(_corrosion_copy_byproduct_deferred target_name output_dir_prop_names ca
         list(TRANSFORM src_file_names PREPEND "deps/" REGEX "\.dll\.a$")
     endif()
     list(TRANSFORM src_file_names PREPEND "${cargo_build_dir}/")
-    list(TRANSFORM file_names PREPEND "${output_dir}/" OUTPUT_VARIABLE dst_file_names)
-    message(DEBUG "Adding command to copy byproducts `${file_names}` to ${dst_file_names}")
+    
+    # Handle generator expressions in output_dir properly
+    if(COR_IS_MULTI_CONFIG)
+        # For multi-config with generator expressions, we can't use list(TRANSFORM)
+        # because it doesn't handle the complex generator expression correctly
+        set(dst_file_names "")
+        foreach(file_name ${file_names})
+            list(APPEND dst_file_names "${output_dir}/${file_name}")
+        endforeach()
+    else()
+        list(TRANSFORM file_names PREPEND "${output_dir}/" OUTPUT_VARIABLE dst_file_names)
+    endif()
+    
+    message(STATUS "[CORROSION DEBUG] Adding copy command:")
+    message(STATUS "[CORROSION DEBUG]   src_file_names: ${src_file_names}")
+    message(STATUS "[CORROSION DEBUG]   dst_file_names: ${dst_file_names}")
+    message(STATUS "[CORROSION DEBUG]   output_dir: ${output_dir}")
+    
     add_custom_command(TARGET _cargo-build_${target_name}
                         POST_BUILD
                         # output_dir may contain a Generator expression.
