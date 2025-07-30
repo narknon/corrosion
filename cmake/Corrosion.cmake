@@ -298,9 +298,21 @@ function(_corrosion_copy_byproduct_deferred target_name output_dir_prop_names ca
             # Fallback to `output_dir` if specified
             # Note: Multi-configuration generators append a per-configuration subdirectory to the
             # specified directory unless a generator expression is used (from CMake documentation).
-            string(GENEX_STRIP "${output_dir}" output_dir_no_genex)
-            message(STATUS "[CORROSION DEBUG]   After GENEX_STRIP: ${output_dir_no_genex}")
-            message(STATUS "[CORROSION DEBUG]   Has genex: ${output_dir} != ${output_dir_no_genex}")
+            
+            # IMPORTANT: Check if the base output_dir already contains $<CONFIG>
+            # If it does, we should NOT append another configuration directory
+            if(output_dir MATCHES "\\$<CONFIG>")
+                message(STATUS "[CORROSION DEBUG]   Base output_dir contains $<CONFIG>, will not append config")
+                # Just replace $<CONFIG> with the actual config
+                string(REPLACE "$<CONFIG>" "${config_type}" curr_out_dir "${output_dir}")
+                message(STATUS "[CORROSION DEBUG]   After CONFIG replacement: ${curr_out_dir}")
+                # Evaluate any variables like ${CMAKE_INSTALL_LIBDIR}
+                string(CONFIGURE "${curr_out_dir}" curr_out_dir @ONLY)
+                message(STATUS "[CORROSION DEBUG]   After variable evaluation: ${curr_out_dir}")
+            else()
+                string(GENEX_STRIP "${output_dir}" output_dir_no_genex)
+                message(STATUS "[CORROSION DEBUG]   After GENEX_STRIP: ${output_dir_no_genex}")
+                message(STATUS "[CORROSION DEBUG]   Has genex: ${output_dir} != ${output_dir_no_genex}")
             
             # Check if the path ends with a variable like ${CMAKE_INSTALL_LIBDIR}
             string(REGEX MATCH "\\$\\{[^}]+\\}$" has_trailing_var "${output_dir}")
@@ -386,11 +398,24 @@ function(_corrosion_copy_byproduct_deferred target_name output_dir_prop_names ca
     
     # Handle generator expressions in output_dir properly
     if(COR_IS_MULTI_CONFIG)
-        # For multi-config with generator expressions, we can't use list(TRANSFORM)
-        # because it doesn't handle the complex generator expression correctly
+        # For multi-config with generator expressions, we need to construct proper paths
+        # for each configuration
         set(dst_file_names "")
         foreach(file_name ${file_names})
-            list(APPEND dst_file_names "${output_dir}/${file_name}")
+            set(dst_file_genex "")
+            foreach(config_type ${CMAKE_CONFIGURATION_TYPES})
+                string(TOUPPER "${config_type}" config_type_upper)
+                # Extract the path for this specific config from our genex
+                # We know curr_out_dir was set for each config in the loop above
+                get_variable("curr_out_dir_${config_type}" curr_out_dir_for_config)
+                if(NOT curr_out_dir_for_config)
+                    # Fallback: extract from the genex we built
+                    # This is a bit hacky but necessary
+                    set(curr_out_dir_for_config "${CMAKE_CURRENT_BINARY_DIR}")
+                endif()
+                set(dst_file_genex "${dst_file_genex}$<$<CONFIG:${config_type}>:${curr_out_dir_for_config}/${file_name}>")
+            endforeach()
+            list(APPEND dst_file_names "${dst_file_genex}")
         endforeach()
     else()
         list(TRANSFORM file_names PREPEND "${output_dir}/" OUTPUT_VARIABLE dst_file_names)
@@ -2325,6 +2350,8 @@ endfunction()
 
 function(_corrosion_initialize_properties target_name)
     message(STATUS "[CORROSION DEBUG] _corrosion_initialize_properties called for: ${target_name}")
+    message(STATUS "[CORROSION DEBUG]   CMAKE_CONFIGURATION_TYPES: ${CMAKE_CONFIGURATION_TYPES}")
+    
     # Initialize the `<XYZ>_OUTPUT_DIRECTORY` properties based on `CMAKE_<XYZ>_OUTPUT_DIRECTORY`.
     foreach(output_var RUNTIME_OUTPUT_DIRECTORY ARCHIVE_OUTPUT_DIRECTORY LIBRARY_OUTPUT_DIRECTORY PDB_OUTPUT_DIRECTORY)
         if (DEFINED "CMAKE_${output_var}")
@@ -2334,9 +2361,12 @@ function(_corrosion_initialize_properties target_name)
 
         foreach(config_type ${CMAKE_CONFIGURATION_TYPES})
             string(TOUPPER "${config_type}" config_type_upper)
+            message(STATUS "[CORROSION DEBUG]   Checking for CMAKE_${output_var}_${config_type_upper}")
             if (DEFINED "CMAKE_${output_var}_${config_type_upper}")
                 message(STATUS "[CORROSION DEBUG]   Setting ${output_var}_${config_type_upper} = ${CMAKE_${output_var}_${config_type_upper}}")
                 set_property(TARGET ${target_name} PROPERTY "${output_var}_${config_type_upper}" "${CMAKE_${output_var}_${config_type_upper}}")
+            else()
+                message(STATUS "[CORROSION DEBUG]   CMAKE_${output_var}_${config_type_upper} is not defined")
             endif()
         endforeach()
     endforeach()
