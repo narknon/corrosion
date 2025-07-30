@@ -263,6 +263,9 @@ function(_corrosion_copy_byproduct_deferred target_name output_dir_prop_names ca
     message(STATUS "[CORROSION DEBUG]   output_dir_prop_names: ${output_dir_prop_names}")
     message(STATUS "[CORROSION DEBUG]   cargo_build_dir: ${cargo_build_dir}")
     message(STATUS "[CORROSION DEBUG]   file_names: ${file_names}")
+    message(STATUS "[CORROSION DEBUG]   CMAKE_CONFIGURATION_TYPES: ${CMAKE_CONFIGURATION_TYPES}")
+    message(STATUS "[CORROSION DEBUG]   CMAKE_BUILD_TYPE: ${CMAKE_BUILD_TYPE}")
+    message(STATUS "[CORROSION DEBUG]   COR_IS_MULTI_CONFIG: ${COR_IS_MULTI_CONFIG}")
 
     foreach(output_dir_prop_name ${output_dir_prop_names})
         get_target_property(output_dir ${target_name} "${output_dir_prop_name}")
@@ -299,6 +302,9 @@ function(_corrosion_copy_byproduct_deferred target_name output_dir_prop_names ca
             message(STATUS "[CORROSION DEBUG]   After GENEX_STRIP: ${output_dir_no_genex}")
             message(STATUS "[CORROSION DEBUG]   Has genex: ${output_dir} != ${output_dir_no_genex}")
             
+            # Check if the path ends with a variable like ${CMAKE_INSTALL_LIBDIR}
+            string(REGEX MATCH "\\$\\{[^}]+\\}$" has_trailing_var "${output_dir}")
+            
             if(output_dir STREQUAL output_dir_no_genex)
                 set(curr_out_dir "${output_dir}/${config_type}")
                 message(STATUS "[CORROSION DEBUG]   No genex - appending config: ${curr_out_dir}")
@@ -306,9 +312,31 @@ function(_corrosion_copy_byproduct_deferred target_name output_dir_prop_names ca
                 # If there's a generator expression, expand it
                 string(REPLACE "$<CONFIG>" "${config_type}" curr_out_dir "${output_dir}")
                 message(STATUS "[CORROSION DEBUG]   After CONFIG replacement: ${curr_out_dir}")
-                # Evaluate any remaining CMake variables in the path
-                string(CONFIGURE "${curr_out_dir}" curr_out_dir @ONLY)
-                message(STATUS "[CORROSION DEBUG]   After CONFIGURE: ${curr_out_dir}")
+                
+                # Check if we need to evaluate variables
+                if(has_trailing_var)
+                    message(STATUS "[CORROSION DEBUG]   Path has trailing variable: ${has_trailing_var}")
+                    # First evaluate the variable
+                    string(CONFIGURE "${curr_out_dir}" curr_out_dir @ONLY)
+                    message(STATUS "[CORROSION DEBUG]   After variable evaluation: ${curr_out_dir}")
+                    # Check if we still have a genex after variable evaluation
+                    string(GENEX_STRIP "${curr_out_dir}" curr_out_dir_no_genex)
+                    if(curr_out_dir STREQUAL curr_out_dir_no_genex)
+                        # No more genex, might need to add config
+                        if(NOT curr_out_dir MATCHES "/${config_type}$")
+                            message(STATUS "[CORROSION DEBUG]   Path doesn't end with config, considering appending")
+                            # Only append if the path doesn't already contain the config
+                            if(NOT curr_out_dir MATCHES "/${config_type}/")
+                                set(curr_out_dir "${curr_out_dir}/${config_type}")
+                                message(STATUS "[CORROSION DEBUG]   Appended config: ${curr_out_dir}")
+                            endif()
+                        endif()
+                    endif()
+                else()
+                    # Evaluate any remaining CMake variables in the path
+                    string(CONFIGURE "${curr_out_dir}" curr_out_dir @ONLY)
+                    message(STATUS "[CORROSION DEBUG]   After CONFIGURE: ${curr_out_dir}")
+                endif()
             endif()
         else()
             # Fallback to the default directory. We do not append the configuration directory here
@@ -376,7 +404,9 @@ function(_corrosion_copy_byproduct_deferred target_name output_dir_prop_names ca
     add_custom_command(TARGET _cargo-build_${target_name}
                         POST_BUILD
                         # output_dir may contain a Generator expression.
+                        COMMAND ${CMAKE_COMMAND} -E echo "[CORROSION BUILD] Creating directory: ${output_dir}"
                         COMMAND  ${CMAKE_COMMAND} -E make_directory "${output_dir}"
+                        COMMAND ${CMAKE_COMMAND} -E echo "[CORROSION BUILD] Copying files from ${cargo_build_dir} to ${output_dir}"
                         COMMAND
                         ${CMAKE_COMMAND} -E copy_if_different
                             # tested to work with both multiple files and paths with spaces
