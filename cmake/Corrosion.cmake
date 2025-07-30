@@ -358,6 +358,8 @@ function(_corrosion_copy_byproduct_deferred target_name output_dir_prop_names ca
             message(STATUS "[CORROSION DEBUG]   Using default CMAKE_CURRENT_BINARY_DIR: ${curr_out_dir}")
         endif()
         message(STATUS "[CORROSION DEBUG]   Final curr_out_dir for ${config_type}: ${curr_out_dir}")
+        # Save the output dir for this config so we can use it later
+        set(_corrosion_out_dir_${config_type} "${curr_out_dir}")
         set(multiconfig_out_dir_genex "${multiconfig_out_dir_genex}$<$<CONFIG:${config_type}>:${curr_out_dir}>")
     endforeach()
 
@@ -404,13 +406,10 @@ function(_corrosion_copy_byproduct_deferred target_name output_dir_prop_names ca
         foreach(file_name ${file_names})
             set(dst_file_genex "")
             foreach(config_type ${CMAKE_CONFIGURATION_TYPES})
-                string(TOUPPER "${config_type}" config_type_upper)
-                # Extract the path for this specific config from our genex
-                # We know curr_out_dir was set for each config in the loop above
-                get_variable("curr_out_dir_${config_type}" curr_out_dir_for_config)
-                if(NOT curr_out_dir_for_config)
-                    # Fallback: extract from the genex we built
-                    # This is a bit hacky but necessary
+                # Use the saved output directory for this config
+                if(DEFINED _corrosion_out_dir_${config_type})
+                    set(curr_out_dir_for_config "${_corrosion_out_dir_${config_type}}")
+                else()
                     set(curr_out_dir_for_config "${CMAKE_CURRENT_BINARY_DIR}")
                 endif()
                 set(dst_file_genex "${dst_file_genex}$<$<CONFIG:${config_type}>:${curr_out_dir_for_config}/${file_name}>")
